@@ -5,7 +5,7 @@
  * "License"); you may not use this file except in compliance with the License. You may obtain a
  * copy of the License at:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software distributed under the License
  * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
@@ -14,17 +14,17 @@
  */
 package io.netty.handler.codec.http2;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.MockitoAnnotations;
 
 import static io.netty.handler.codec.http2.Http2CodecUtil.DEFAULT_PRIORITY_WEIGHT;
 import static io.netty.handler.codec.http2.Http2CodecUtil.MAX_WEIGHT;
 import static io.netty.handler.codec.http2.Http2CodecUtil.MIN_WEIGHT;
 import static io.netty.handler.codec.http2.WeightedFairQueueByteDistributor.INITIAL_CHILDREN_MAP_SIZE;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doAnswer;
@@ -42,7 +42,7 @@ public class WeightedFairQueueByteDistributorDependencyTreeTest extends
     private static final short speculativeWeight = 1;
     private static final short followersWeight = 1;
 
-    @Before
+    @BeforeEach
     public void setup() throws Http2Exception {
         MockitoAnnotations.initMocks(this);
 
@@ -175,7 +175,7 @@ public class WeightedFairQueueByteDistributorDependencyTreeTest extends
 
     @Test
     public void fireFoxQoSStreamsRemainAfterDataStreamsAreClosed() throws Http2Exception {
-        // http://bitsup.blogspot.com/2015/01/http2-dependency-priorities-in-firefox.html
+        // https://bitsup.blogspot.com/2015/01/http2-dependency-priorities-in-firefox.html
         setup(5);
 
         setPriority(leadersId, connection.connectionStream().id(), leadersWeight, false);

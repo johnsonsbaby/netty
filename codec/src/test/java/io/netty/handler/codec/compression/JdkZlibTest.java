@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -21,13 +21,17 @@ import io.netty.channel.embedded.EmbeddedChannel;
 import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
 import org.apache.commons.compress.utils.IOUtils;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Queue;
 
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 public class JdkZlibTest extends ZlibTest {
@@ -42,10 +46,15 @@ public class JdkZlibTest extends ZlibTest {
         return new JdkZlibDecoder(wrapper, maxAllocation);
     }
 
-    @Test(expected = DecompressionException.class)
+    @Test
     @Override
     public void testZLIB_OR_NONE3() throws Exception {
-        super.testZLIB_OR_NONE3();
+        assertThrows(DecompressionException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+                JdkZlibTest.super.testZLIB_OR_NONE3();
+            }
+        });
     }
 
     @Test
@@ -77,6 +86,36 @@ public class JdkZlibTest extends ZlibTest {
             byte[] bytes = IOUtils.toByteArray(getClass().getResourceAsStream("/multiple.gz"));
 
             assertTrue(chDecoderGZip.writeInbound(Unpooled.copiedBuffer(bytes)));
+            Queue<Object> messages = chDecoderGZip.inboundMessages();
+            assertEquals(2, messages.size());
+
+            for (String s : Arrays.asList("a", "b")) {
+                ByteBuf msg = (ByteBuf) messages.poll();
+                assertEquals(s, msg.toString(CharsetUtil.UTF_8));
+                ReferenceCountUtil.release(msg);
+            }
+        } finally {
+            assertFalse(chDecoderGZip.finish());
+            chDecoderGZip.close();
+        }
+    }
+
+    @Test
+    public void testConcatenatedStreamsReadFullyWhenFragmented() throws IOException {
+        EmbeddedChannel chDecoderGZip = new EmbeddedChannel(new JdkZlibDecoder(true));
+
+        try {
+            byte[] bytes = IOUtils.toByteArray(getClass().getResourceAsStream("/multiple.gz"));
+
+            // Let's feed the input byte by byte to simulate fragmentation.
+            ByteBuf buf = Unpooled.copiedBuffer(bytes);
+            boolean written = false;
+            while (buf.isReadable()) {
+                written |= chDecoderGZip.writeInbound(buf.readRetainedSlice(1));
+            }
+            buf.release();
+
+            assertTrue(written);
             Queue<Object> messages = chDecoderGZip.inboundMessages();
             assertEquals(2, messages.size());
 

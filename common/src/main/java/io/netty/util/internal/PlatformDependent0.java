@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -46,6 +46,7 @@ final class PlatformDependent0 {
     private static final Constructor<?> DIRECT_BUFFER_CONSTRUCTOR;
     private static final Throwable EXPLICIT_NO_UNSAFE_CAUSE = explicitNoUnsafeCause0();
     private static final Method ALLOCATE_ARRAY_METHOD;
+    private static final Method ALIGN_SLICE;
     private static final int JAVA_VERSION = javaVersion0();
     private static final boolean IS_ANDROID = isAndroid0();
 
@@ -124,7 +125,11 @@ final class PlatformDependent0 {
             if (maybeUnsafe instanceof Throwable) {
                 unsafe = null;
                 unsafeUnavailabilityCause = (Throwable) maybeUnsafe;
-                logger.debug("sun.misc.Unsafe.theUnsafe: unavailable", (Throwable) maybeUnsafe);
+                if (logger.isTraceEnabled()) {
+                    logger.debug("sun.misc.Unsafe.theUnsafe: unavailable", (Throwable) maybeUnsafe);
+                } else {
+                    logger.debug("sun.misc.Unsafe.theUnsafe: unavailable: {}", ((Throwable) maybeUnsafe).getMessage());
+                }
             } else {
                 unsafe = (Unsafe) maybeUnsafe;
                 logger.debug("sun.misc.Unsafe.theUnsafe: available");
@@ -132,7 +137,7 @@ final class PlatformDependent0 {
 
             // ensure the unsafe supports all necessary methods to work around the mistake in the latest OpenJDK
             // https://github.com/netty/netty/issues/1061
-            // http://www.mail-archive.com/jdk6-dev@openjdk.java.net/msg00698.html
+            // https://www.mail-archive.com/jdk6-dev@openjdk.java.net/msg00698.html
             if (unsafe != null) {
                 final Unsafe finalUnsafe = unsafe;
                 final Object maybeException = AccessController.doPrivileged(new PrivilegedAction<Object>() {
@@ -156,7 +161,12 @@ final class PlatformDependent0 {
                     // Unsafe.copyMemory(Object, long, Object, long, long) unavailable.
                     unsafe = null;
                     unsafeUnavailabilityCause = (Throwable) maybeException;
-                    logger.debug("sun.misc.Unsafe.copyMemory: unavailable", (Throwable) maybeException);
+                    if (logger.isTraceEnabled()) {
+                        logger.debug("sun.misc.Unsafe.copyMemory: unavailable", (Throwable) maybeException);
+                    } else {
+                        logger.debug("sun.misc.Unsafe.copyMemory: unavailable: {}",
+                                ((Throwable) maybeException).getMessage());
+                    }
                 }
             }
 
@@ -192,7 +202,12 @@ final class PlatformDependent0 {
                     logger.debug("java.nio.Buffer.address: available");
                 } else {
                     unsafeUnavailabilityCause = (Throwable) maybeAddressField;
-                    logger.debug("java.nio.Buffer.address: unavailable", (Throwable) maybeAddressField);
+                    if (logger.isTraceEnabled()) {
+                        logger.debug("java.nio.Buffer.address: unavailable", (Throwable) maybeAddressField);
+                    } else {
+                        logger.debug("java.nio.Buffer.address: unavailable: {}",
+                                ((Throwable) maybeAddressField).getMessage());
+                    }
 
                     // If we cannot access the address of a direct buffer, there's no point of using unsafe.
                     // Let's just pretend unsafe is unavailable for overall simplicity.
@@ -263,9 +278,13 @@ final class PlatformDependent0 {
                         directBufferConstructor = null;
                     }
                 } else {
-                    logger.debug(
-                            "direct buffer constructor: unavailable",
-                            (Throwable) maybeDirectBufferConstructor);
+                    if (logger.isTraceEnabled()) {
+                        logger.debug("direct buffer constructor: unavailable",
+                                (Throwable) maybeDirectBufferConstructor);
+                    } else {
+                        logger.debug("direct buffer constructor: unavailable: {}",
+                                ((Throwable) maybeDirectBufferConstructor).getMessage());
+                    }
                     directBufferConstructor = null;
                 }
             } finally {
@@ -334,7 +353,11 @@ final class PlatformDependent0 {
                 //noinspection DynamicRegexReplaceableByCompiledPattern
                 unaligned = arch.matches("^(i[3-6]86|x86(_64)?|x64|amd64)$");
                 Throwable t = (Throwable) maybeUnaligned;
-                logger.debug("java.nio.Bits.unaligned: unavailable {}", unaligned, t);
+                if (logger.isTraceEnabled()) {
+                    logger.debug("java.nio.Bits.unaligned: unavailable, {}", unaligned, t);
+                } else {
+                    logger.debug("java.nio.Bits.unaligned: unavailable, {}, {}", unaligned, t.getMessage());
+                }
             }
 
             UNALIGNED = unaligned;
@@ -387,8 +410,13 @@ final class PlatformDependent0 {
                 }
 
                 if (maybeException instanceof Throwable) {
-                    logger.debug("jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable",
-                            (Throwable) maybeException);
+                    if (logger.isTraceEnabled()) {
+                        logger.debug("jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable",
+                                (Throwable) maybeException);
+                    } else {
+                        logger.debug("jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable: {}",
+                                ((Throwable) maybeException).getMessage());
+                    }
                 } else {
                     logger.debug("jdk.internal.misc.Unsafe.allocateUninitializedArray(int): available");
                 }
@@ -396,6 +424,21 @@ final class PlatformDependent0 {
                 logger.debug("jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable prior to Java9");
             }
             ALLOCATE_ARRAY_METHOD = allocateArrayMethod;
+        }
+
+        if (javaVersion() > 9) {
+            ALIGN_SLICE = (Method) AccessController.doPrivileged(new PrivilegedAction<Object>() {
+                @Override
+                public Object run() {
+                    try {
+                        return ByteBuffer.class.getDeclaredMethod("alignedSlice", int.class);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
+            });
+        } else {
+            ALIGN_SLICE = null;
         }
 
         INTERNAL_UNSAFE = internalUnsafe;
@@ -470,8 +513,22 @@ final class PlatformDependent0 {
     static ByteBuffer allocateDirectNoCleaner(int capacity) {
         // Calling malloc with capacity of 0 may return a null ptr or a memory address that can be used.
         // Just use 1 to make it safe to use in all cases:
-        // See: http://pubs.opengroup.org/onlinepubs/009695399/functions/malloc.html
+        // See: https://pubs.opengroup.org/onlinepubs/009695399/functions/malloc.html
         return newDirectBuffer(UNSAFE.allocateMemory(Math.max(1, capacity)), capacity);
+    }
+
+    static boolean hasAlignSliceMethod() {
+        return ALIGN_SLICE != null;
+    }
+
+    static ByteBuffer alignSlice(ByteBuffer buffer, int alignment) {
+        try {
+            return (ByteBuffer) ALIGN_SLICE.invoke(buffer, alignment);
+        } catch (IllegalAccessException e) {
+            throw new Error(e);
+        } catch (InvocationTargetException e) {
+            throw new Error(e);
+        }
     }
 
     static boolean hasAllocateArrayMethod() {
@@ -560,6 +617,14 @@ final class PlatformDependent0 {
 
     static int getInt(int[] data, long index) {
         return UNSAFE.getInt(data, INT_ARRAY_BASE_OFFSET + INT_ARRAY_INDEX_SCALE * index);
+    }
+
+    static int getIntVolatile(long address) {
+        return UNSAFE.getIntVolatile(null, address);
+    }
+
+    static void putIntOrdered(long adddress, int newValue) {
+        UNSAFE.putOrderedInt(null, adddress, newValue);
     }
 
     static long getLong(byte[] data, int index) {

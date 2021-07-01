@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -1601,6 +1601,10 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
         for (int low = 0, high = componentCount; low <= high;) {
             int mid = low + high >>> 1;
             Component c = components[mid];
+            if (c == null) {
+                throw new IllegalStateException("No component found for offset. " +
+                        "Composite buffer layout might be outdated, e.g. from a discardReadBytes call.");
+            }
             if (offset >= c.endOffset) {
                 low = mid + 1;
             } else if (offset < c.offset) {
@@ -1656,6 +1660,9 @@ public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements
             if (buf.nioBufferCount() == 1) {
                 return buf.nioBuffer(c.idx(index), length);
             }
+            break;
+        default:
+            break;
         }
 
         ByteBuffer[] buffers = nioBuffers(index, length);

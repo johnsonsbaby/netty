@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -31,7 +31,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
@@ -588,10 +587,20 @@ public class ResourceLeakDetector<T> {
         } while (!excludedMethods.compareAndSet(oldMethods, newMethods));
     }
 
-    private static final class TraceRecord extends Throwable {
+    private static class TraceRecord extends Throwable {
         private static final long serialVersionUID = 6065153674892850720L;
 
-        private static final TraceRecord BOTTOM = new TraceRecord();
+        private static final TraceRecord BOTTOM = new TraceRecord() {
+            private static final long serialVersionUID = 7396077602074694571L;
+
+            // Override fillInStackTrace() so we not populate the backtrace via a native call and so leak the
+            // Classloader.
+            // See https://github.com/netty/netty/pull/10691
+            @Override
+            public Throwable fillInStackTrace() {
+                return this;
+            }
+        };
 
         private final String hintString;
         private final TraceRecord next;
@@ -632,8 +641,10 @@ public class ResourceLeakDetector<T> {
                 // Strip the noisy stack trace elements.
                 String[] exclusions = excludedMethods.get();
                 for (int k = 0; k < exclusions.length; k += 2) {
+                    // Suppress a warning about out of bounds access
+                    // since the length of excludedMethods is always even, see addExclusions()
                     if (exclusions[k].equals(element.getClassName())
-                            && exclusions[k + 1].equals(element.getMethodName())) {
+                            && exclusions[k + 1].equals(element.getMethodName())) { // lgtm[java/index-out-of-bounds]
                         continue out;
                     }
                 }

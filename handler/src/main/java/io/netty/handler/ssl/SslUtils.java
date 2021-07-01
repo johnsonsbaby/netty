@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -23,6 +23,7 @@ import io.netty.handler.codec.base64.Base64;
 import io.netty.handler.codec.base64.Base64Dialect;
 import io.netty.util.NetUtil;
 import io.netty.util.internal.EmptyArrays;
+import io.netty.util.internal.StringUtil;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
@@ -30,6 +31,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,6 +64,7 @@ final class SslUtils {
     static final String PROTOCOL_TLS_V1_1 = "TLSv1.1";
     static final String PROTOCOL_TLS_V1_2 = "TLSv1.2";
     static final String PROTOCOL_TLS_V1_3 = "TLSv1.3";
+    static final int GMSSL_PROTOCOL_VERSION = 0x101;
 
     static final String INVALID_CIPHER = "SSL_NULL_WITH_NULL_NULL";
 
@@ -195,6 +198,22 @@ final class SslUtils {
         return context;
     }
 
+    static SSLContext getSSLContext(String provider)
+            throws NoSuchAlgorithmException, KeyManagementException, NoSuchProviderException {
+        final SSLContext context;
+        if (StringUtil.isNullOrEmpty(provider)) {
+            context = SSLContext.getInstance(getTlsVersion());
+        } else {
+            context = SSLContext.getInstance(getTlsVersion(), provider);
+        }
+        context.init(null, new TrustManager[0], null);
+        return context;
+    }
+
+    private static String getTlsVersion() {
+        return TLSV1_3_JDK_SUPPORTED ? PROTOCOL_TLS_V1_3 : PROTOCOL_TLS_V1_2;
+    }
+
     static boolean arrayContains(String[] array, String value) {
         for (String v: array) {
             if (value.equals(v)) {
@@ -277,10 +296,10 @@ final class SslUtils {
         }
 
         if (tls) {
-            // SSLv3 or TLS - Check ProtocolVersion
+            // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1 - Check ProtocolVersion
             int majorVersion = buffer.getUnsignedByte(offset + 1);
-            if (majorVersion == 3) {
-                // SSLv3 or TLS
+            if (majorVersion == 3 || buffer.getShort(offset + 1) == GMSSL_PROTOCOL_VERSION) {
+                // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1
                 packetLength = unsignedShortBE(buffer, offset + 3) + SSL_RECORD_HEADER_LENGTH;
                 if (packetLength <= SSL_RECORD_HEADER_LENGTH) {
                     // Neither SSLv3 or TLSv1 (i.e. SSLv2 or bad data)
@@ -382,10 +401,10 @@ final class SslUtils {
         }
 
         if (tls) {
-            // SSLv3 or TLS - Check ProtocolVersion
+            // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1 - Check ProtocolVersion
             int majorVersion = unsignedByte(buffer.get(pos + 1));
-            if (majorVersion == 3) {
-                // SSLv3 or TLS
+            if (majorVersion == 3 || buffer.getShort(pos + 1) == GMSSL_PROTOCOL_VERSION) {
+                // SSLv3 or TLS or GMSSLv1.0 or GMSSLv1.1
                 packetLength = unsignedShortBE(buffer, pos + 3) + SSL_RECORD_HEADER_LENGTH;
                 if (packetLength <= SSL_RECORD_HEADER_LENGTH) {
                     // Neither SSLv3 or TLSv1 (i.e. SSLv2 or bad data)
@@ -471,6 +490,10 @@ final class SslUtils {
     static boolean isTLSv13Cipher(String cipher) {
         // See https://tools.ietf.org/html/rfc8446#appendix-B.4
         return TLSV13_CIPHERS.contains(cipher);
+    }
+
+    static boolean isEmpty(Object[] arr) {
+        return arr == null || arr.length == 0;
     }
 
     private SslUtils() {

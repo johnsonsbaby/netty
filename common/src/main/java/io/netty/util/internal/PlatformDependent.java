@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -38,6 +38,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.file.Files;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
@@ -82,11 +83,6 @@ public final class PlatformDependent {
     private static final Pattern MAX_DIRECT_MEMORY_SIZE_ARG_PATTERN = Pattern.compile(
             "\\s*-XX:MaxDirectMemorySize\\s*=\\s*([0-9]+)\\s*([kKmMgG]?)\\s*$");
 
-    private static final boolean IS_WINDOWS = isWindows0();
-    private static final boolean IS_OSX = isOsx0();
-    private static final boolean IS_J9_JVM = isJ9Jvm0();
-    private static final boolean IS_IVKVM_DOT_NET = isIkvmDotNet0();
-
     private static final boolean MAYBE_SUPER_USER;
 
     private static final boolean CAN_ENABLE_TCP_NODELAY_BY_DEFAULT = !isAndroid();
@@ -110,6 +106,11 @@ public final class PlatformDependent {
     // keep in sync with maven's pom.xml via os.detection.classifierWithLikes!
     private static final String[] ALLOWED_LINUX_OS_CLASSIFIERS = {"fedora", "suse", "arch"};
     private static final Set<String> LINUX_OS_CLASSIFIERS;
+
+    private static final boolean IS_WINDOWS = isWindows0();
+    private static final boolean IS_OSX = isOsx0();
+    private static final boolean IS_J9_JVM = isJ9Jvm0();
+    private static final boolean IS_IVKVM_DOT_NET = isIkvmDotNet0();
 
     private static final int ADDRESS_SIZE = addressSize0();
     private static final boolean USE_DIRECT_BUFFER_NO_CLEANER;
@@ -347,7 +348,7 @@ public final class PlatformDependent {
     /**
      * {@code true} if and only if the platform supports unaligned access.
      *
-     * @see <a href="http://en.wikipedia.org/wiki/Segmentation_fault#Bus_error">Wikipedia on segfault</a>
+     * @see <a href="https://en.wikipedia.org/wiki/Segmentation_fault#Bus_error">Wikipedia on segfault</a>
      */
     public static boolean isUnaligned() {
         return PlatformDependent0.isUnaligned();
@@ -501,6 +502,14 @@ public final class PlatformDependent {
 
     public static int getInt(Object object, long fieldOffset) {
         return PlatformDependent0.getInt(object, fieldOffset);
+    }
+
+    public static int getIntVolatile(long address) {
+        return PlatformDependent0.getIntVolatile(address);
+    }
+
+    public static void putIntOrdered(long adddress, int newValue) {
+        PlatformDependent0.putIntOrdered(adddress, newValue);
     }
 
     public static byte getByte(long address) {
@@ -757,6 +766,32 @@ public final class PlatformDependent {
         int capacity = buffer.capacity();
         PlatformDependent0.freeMemory(PlatformDependent0.directBufferAddress(buffer));
         decrementMemoryCounter(capacity);
+    }
+
+    public static boolean hasAlignDirectByteBuffer() {
+        return hasUnsafe() || PlatformDependent0.hasAlignSliceMethod();
+    }
+
+    public static ByteBuffer alignDirectBuffer(ByteBuffer buffer, int alignment) {
+        if (!buffer.isDirect()) {
+            throw new IllegalArgumentException("Cannot get aligned slice of non-direct byte buffer.");
+        }
+        if (PlatformDependent0.hasAlignSliceMethod()) {
+            return PlatformDependent0.alignSlice(buffer, alignment);
+        }
+        if (hasUnsafe()) {
+            long address = directBufferAddress(buffer);
+            long aligned = align(address, alignment);
+            buffer.position((int) (aligned - address));
+            return buffer.slice();
+        }
+        // We don't have enough information to be able to align any buffers.
+        throw new UnsupportedOperationException("Cannot align direct buffer. " +
+                "Needs either Unsafe or ByteBuffer.alignSlice method available.");
+    }
+
+    public static long align(long value, int alignment) {
+        return Pow2.align(value, alignment);
     }
 
     private static void incrementMemoryCounter(int capacity) {
@@ -1023,7 +1058,7 @@ public final class PlatformDependent {
     }
 
     private static boolean isWindows0() {
-        boolean windows = SystemPropertyUtil.get("os.name", "").toLowerCase(Locale.US).contains("win");
+        boolean windows = "windows".equals(NORMALIZED_OS);
         if (windows) {
             logger.debug("Platform: Windows");
         }
@@ -1031,10 +1066,7 @@ public final class PlatformDependent {
     }
 
     private static boolean isOsx0() {
-        String osname = SystemPropertyUtil.get("os.name", "").toLowerCase(Locale.US)
-                .replaceAll("[^a-z0-9]+", "");
-        boolean osx = osname.startsWith("macosx") || osname.startsWith("osx");
-
+        boolean osx = "osx".equals(NORMALIZED_OS);
         if (osx) {
             logger.debug("Platform: MacOS");
         }
@@ -1381,6 +1413,24 @@ public final class PlatformDependent {
         return LINUX_OS_CLASSIFIERS;
     }
 
+    @SuppressJava6Requirement(reason = "Guarded by version check")
+    public static File createTempFile(String prefix, String suffix, File directory) throws IOException {
+        if (javaVersion() >= 7) {
+            if (directory == null) {
+                return Files.createTempFile(prefix, suffix).toFile();
+            }
+            return Files.createTempFile(directory.toPath(), prefix, suffix).toFile();
+        }
+        if (directory == null) {
+            return File.createTempFile(prefix, suffix);
+        }
+        File file = File.createTempFile(prefix, suffix, directory);
+        // Try to adjust the perms, if this fails there is not much else we can do...
+        file.setReadable(false, false);
+        file.setReadable(true, true);
+        return file;
+    }
+
     /**
      * Adds only those classifier strings to <tt>dest</tt> which are present in <tt>allowed</tt>.
      *
@@ -1464,7 +1514,7 @@ public final class PlatformDependent {
         if (value.startsWith("linux")) {
             return "linux";
         }
-        if (value.startsWith("macosx") || value.startsWith("osx")) {
+        if (value.startsWith("macosx") || value.startsWith("osx") || value.startsWith("darwin")) {
             return "osx";
         }
         if (value.startsWith("freebsd")) {

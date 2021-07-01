@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -20,8 +20,8 @@ import io.netty.util.concurrent.FastThreadLocal;
 import io.netty.util.concurrent.FastThreadLocalThread;
 import io.netty.util.internal.PlatformDependent;
 import io.netty.util.internal.SystemPropertyUtil;
-import org.junit.Assume;
-import org.junit.Test;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -32,14 +32,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import org.junit.jupiter.api.Timeout;
 
 import static io.netty.buffer.PoolChunk.runOffset;
 import static io.netty.buffer.PoolChunk.runPages;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<PooledByteBufAllocator> {
 
@@ -144,13 +145,13 @@ public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<Poo
 
     @Test
     public void testArenaMetricsNoCacheAlign() {
-        Assume.assumeTrue(PooledByteBufAllocator.isDirectMemoryCacheAlignmentSupported());
+        Assumptions.assumeTrue(PooledByteBufAllocator.isDirectMemoryCacheAlignmentSupported());
         testArenaMetrics0(new PooledByteBufAllocator(true, 2, 2, 8192, 11, 0, 0, 0, true, 64), 100, 0, 100, 100);
     }
 
     @Test
     public void testArenaMetricsCacheAlign() {
-        Assume.assumeTrue(PooledByteBufAllocator.isDirectMemoryCacheAlignmentSupported());
+        Assumptions.assumeTrue(PooledByteBufAllocator.isDirectMemoryCacheAlignmentSupported());
         testArenaMetrics0(new PooledByteBufAllocator(true, 2, 2, 8192, 11, 1000, 1000, 1000, true, 64), 100, 1, 1, 0);
     }
 
@@ -338,12 +339,14 @@ public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<Poo
         }
     }
 
-    @Test (timeout = 4000)
+    @Test
+    @Timeout(value = 4000, unit = MILLISECONDS)
     public void testThreadCacheDestroyedByThreadCleaner() throws InterruptedException {
         testThreadCacheDestroyed(false);
     }
 
-    @Test (timeout = 4000)
+    @Test
+    @Timeout(value = 4000, unit = MILLISECONDS)
     public void testThreadCacheDestroyedAfterExitRun() throws InterruptedException {
         testThreadCacheDestroyed(true);
     }
@@ -403,7 +406,8 @@ public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<Poo
         assertTrue(threadCachesCreated.get());
     }
 
-    @Test(timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = MILLISECONDS)
     public void testNumThreadCachesWithNoDirectArenas() throws InterruptedException {
         int numHeapArenas = 1;
         final PooledByteBufAllocator allocator =
@@ -422,7 +426,8 @@ public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<Poo
         assertEquals(0, allocator.metric().numThreadLocalCaches());
     }
 
-    @Test(timeout = 3000)
+    @Test
+    @Timeout(value = 3000, unit = MILLISECONDS)
     public void testThreadCacheToArenaMappings() throws InterruptedException {
         int numArenas = 2;
         final PooledByteBufAllocator allocator =
@@ -632,7 +637,56 @@ public class PooledByteBufAllocatorTest extends AbstractByteBufAllocatorTest<Poo
     }
 
     @SuppressWarnings("unchecked")
-    private static PooledByteBuf<ByteBuffer> unwrapIfNeeded(ByteBuf buf) {
-        return (PooledByteBuf<ByteBuffer>) (buf instanceof PooledByteBuf ? buf : buf.unwrap());
+    private static <T> PooledByteBuf<T> unwrapIfNeeded(ByteBuf buf) {
+        return (PooledByteBuf<T>) (buf instanceof PooledByteBuf ? buf : buf.unwrap());
+    }
+
+    @Test
+    public void testCacheWorksForNormalAllocations() {
+        int maxCachedBufferCapacity = PooledByteBufAllocator.DEFAULT_MAX_CACHED_BUFFER_CAPACITY;
+        final PooledByteBufAllocator allocator =
+                new PooledByteBufAllocator(true, 1, 1,
+                        PooledByteBufAllocator.defaultPageSize(), PooledByteBufAllocator.defaultMaxOrder(),
+                        128, 128, true);
+        ByteBuf buffer = allocator.directBuffer(maxCachedBufferCapacity);
+        assertEquals(1, allocator.metric().directArenas().get(0).numNormalAllocations());
+        buffer.release();
+
+        buffer = allocator.directBuffer(maxCachedBufferCapacity);
+        // Should come out of the cache so the count should not be incremented
+        assertEquals(1, allocator.metric().directArenas().get(0).numNormalAllocations());
+        buffer.release();
+
+        // Should be allocated without cache and also not put back in a cache.
+        buffer = allocator.directBuffer(maxCachedBufferCapacity + 1);
+        assertEquals(2, allocator.metric().directArenas().get(0).numNormalAllocations());
+        buffer.release();
+
+        buffer = allocator.directBuffer(maxCachedBufferCapacity + 1);
+        assertEquals(3, allocator.metric().directArenas().get(0).numNormalAllocations());
+        buffer.release();
+    }
+
+    @Test
+    public void testNormalPoolSubpageRelease() {
+        // 16 < elemSize <= 7168 or 8192 < elemSize <= 28672, 1 < subpage.maxNumElems <= 256
+        // 7168 <= elemSize <= 8192, subpage.maxNumElems == 1
+        int elemSize = 8192;
+        int length = 1024;
+        ByteBuf[] byteBufs = new ByteBuf[length];
+        final PooledByteBufAllocator allocator = new PooledByteBufAllocator(false, 32, 32, 8192, 11, 256, 64, false, 0);
+
+        for (int i = 0; i < length; i++) {
+            byteBufs[i] = allocator.heapBuffer(elemSize, elemSize);
+        }
+        PoolChunk<Object> chunk = unwrapIfNeeded(byteBufs[0]).chunk;
+
+        int beforeFreeBytes = chunk.freeBytes();
+        for (int i = 0; i < length; i++) {
+            byteBufs[i].release();
+        }
+        int afterFreeBytes = chunk.freeBytes();
+
+        assertTrue(beforeFreeBytes < afterFreeBytes);
     }
 }

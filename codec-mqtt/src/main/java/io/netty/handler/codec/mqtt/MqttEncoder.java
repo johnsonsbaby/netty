@@ -5,7 +5,7 @@
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *   https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -31,10 +31,11 @@ import static io.netty.buffer.ByteBufUtil.*;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.getMqttVersion;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.isValidClientId;
 import static io.netty.handler.codec.mqtt.MqttCodecUtil.setMqttVersion;
+import static io.netty.handler.codec.mqtt.MqttConstant.DEFAULT_MAX_CLIENT_ID_LENGTH;
 
 /**
  * Encodes Mqtt messages into bytes following the protocol specification v3.1
- * as described here <a href="http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html">MQTTV3.1</a>
+ * as described here <a href="https://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html">MQTTV3.1</a>
  * or v5.0 as described here <a href="https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html">MQTTv5.0</a> -
  * depending on the version specified in the first CONNECT message that goes through the channel.
  */
@@ -124,7 +125,7 @@ public final class MqttEncoder extends MessageToMessageEncoder<MqttMessage> {
 
         // Client id
         String clientIdentifier = payload.clientIdentifier();
-        if (!isValidClientId(mqttVersion, clientIdentifier)) {
+        if (!isValidClientId(mqttVersion, DEFAULT_MAX_CLIENT_ID_LENGTH, clientIdentifier)) {
             throw new MqttIdentifierRejectedException("invalid clientIdentifier: " + clientIdentifier);
         }
         int clientIdentifierBytes = utf8Bytes(clientIdentifier);
@@ -287,18 +288,22 @@ public final class MqttEncoder extends MessageToMessageEncoder<MqttMessage> {
             // Payload
             for (MqttTopicSubscription topic : payload.topicSubscriptions()) {
                 writeUnsafeUTF8String(buf, topic.topicName());
-                final MqttSubscriptionOption option = topic.option();
+                if (mqttVersion == MqttVersion.MQTT_3_1_1 || mqttVersion == MqttVersion.MQTT_3_1) {
+                    buf.writeByte(topic.qualityOfService().value());
+                } else {
+                    final MqttSubscriptionOption option = topic.option();
 
-                int optionEncoded = option.retainHandling().value() << 4;
-                if (option.isRetainAsPublished()) {
-                    optionEncoded |= 0x08;
-                }
-                if (option.isNoLocal()) {
-                    optionEncoded |= 0x04;
-                }
-                optionEncoded |= option.qos().value();
+                    int optionEncoded = option.retainHandling().value() << 4;
+                    if (option.isRetainAsPublished()) {
+                        optionEncoded |= 0x08;
+                    }
+                    if (option.isNoLocal()) {
+                        optionEncoded |= 0x04;
+                    }
+                    optionEncoded |= option.qos().value();
 
-                buf.writeByte(optionEncoded);
+                    buf.writeByte(optionEncoded);
+                }
             }
 
             return buf;
